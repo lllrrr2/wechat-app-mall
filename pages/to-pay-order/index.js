@@ -89,7 +89,44 @@ Page({
     // 口令兑换相关
     exchangeCouponShow: false,
     exchangeNumber: '',
-    exchangePwd: ''
+    exchangePwd: '',
+
+    // 配送规则：optional 可选；express 强制快递；pickup 强制自提；virtual 虚拟商品；conflict 配送方式冲突
+    deliveryMode: 'optional',
+    isVirtualOrder: false,
+    hasDeliveryConflict: false
+  },
+  resolveDeliveryRule(goodsList) {
+    const list = Array.isArray(goodsList) ? goodsList : []
+    const isVirtualOrder = list.length > 0 && list.every(item => Number(item.type) === 1)
+    const hasExpressOnly = list.some(item => Number(item.deliveryType) === 1)
+    const hasPickupOnly = list.some(item => Number(item.deliveryType) === 2)
+
+    let deliveryMode = 'optional'
+    let peisongType = this.data.peisongType
+    let hasDeliveryConflict = false
+
+    if (isVirtualOrder) {
+      deliveryMode = 'virtual'
+      peisongType = 'kd'
+    } else if (hasExpressOnly && hasPickupOnly) {
+      deliveryMode = 'conflict'
+      peisongType = 'kd'
+      hasDeliveryConflict = true
+    } else if (hasExpressOnly) {
+      deliveryMode = 'express'
+      peisongType = 'kd'
+    } else if (hasPickupOnly) {
+      deliveryMode = 'pickup'
+      peisongType = 'zq'
+    }
+
+    return {
+      deliveryMode,
+      isVirtualOrder,
+      hasDeliveryConflict,
+      peisongType
+    }
   },
   onShow() {
     if (this.data.pageIsEnd) {
@@ -104,8 +141,8 @@ Page({
     //立即购买下单
     if ("buyNow" == this.data.orderType) {
       var buyNowInfoMem = wx.getStorageSync('buyNowInfo');
-      this.data.kjId = buyNowInfoMem.kjId;
       if (buyNowInfoMem && buyNowInfoMem.shopList) {
+        this.data.kjId = buyNowInfoMem.kjId;
         goodsList = buyNowInfoMem.shopList
       }
     } else {
@@ -157,12 +194,23 @@ Page({
         })
       })
     }
+    const deliveryRule = this.resolveDeliveryRule(goodsList)
     this.setData({
       shopList,
       goodsList,
-      peisongType: this.data.peisongType,
-      extRequired
+      extRequired,
+      ...deliveryRule
     });
+    if (deliveryRule.hasDeliveryConflict) {
+      wx.showToast({
+        title: '仅快递商品和仅自提商品不能一起下单，请拆分订单',
+        icon: 'none',
+        duration: 3000
+      })
+    }
+    if (deliveryRule.deliveryMode == 'pickup') {
+      this.fetchShops()
+    }
     this.initShippingAddress()
     this.userAmount()
   },
@@ -214,6 +262,13 @@ Page({
     this.data.remark = e.detail.value
   },
   async goCreateOrder() {
+    if (this.data.hasDeliveryConflict) {
+      wx.showToast({
+        title: '仅快递商品和仅自提商品不能一起下单，请拆分订单',
+        icon: 'none'
+      })
+      return
+    }
     this.setData({
       btnLoading: true
     })
@@ -259,6 +314,8 @@ Page({
       goodsType: this.data.shopCarType,
       cardId: this.data.cardId,
     }
+    const needsShippingAddress = this.data.deliveryMode == 'express' ||
+      (this.data.deliveryMode == 'optional' && postData.peisongType == 'kd' && this.data.isNeedLogistics > 0)
     if (this.data.deductionScore != '-1') {
       postData.deductionScore = this.data.deductionScore
     }
@@ -293,14 +350,14 @@ Page({
     if (postData.peisongType == 'kd' && this.data.curAddressData && this.data.curAddressData.streetId) {
       postData.streetId = this.data.curAddressData.streetId;
     }
-    if (this.data.shopCarType == 1) {
-      // vop 需要地址来计算运费
+    if (this.data.shopCarType == 1 && needsShippingAddress && this.data.curAddressData) {
+      // vop 快递商品需要地址来计算运费
       postData.address = this.data.curAddressData.address;
       postData.linkMan = this.data.curAddressData.linkMan;
       postData.mobile = this.data.curAddressData.mobile;
       postData.code = this.data.curAddressData.code;
     }
-    if (e && this.data.isNeedLogistics > 0 && postData.peisongType == 'kd') {
+    if (e && needsShippingAddress) {
       if (!this.data.curAddressData) {
         wx.hideLoading();
         wx.showToast({
@@ -325,7 +382,7 @@ Page({
     if (!e) {
       postData.calculate = "true";
     } else {
-      if (postData.peisongType == 'zq' && this.data.shops && this.data.shopIndex == -1) {
+      if (postData.peisongType == 'zq' && (!this.data.shops || this.data.shops.length == 0 || this.data.shopIndex < 0)) {
         wx.showToast({
           title: '请选择自提门店',
           icon: 'none'
@@ -392,6 +449,9 @@ Page({
         postData.shopNameZt = this.data.shops[this.data.shopIndex].name
       }
       postData.extJsonStr = JSON.stringify(extJsonStr)
+      if (this.data.isVirtualOrder) {
+        postData.isCanHx = true
+      }
     }
     const shopList = this.data.shopList
     let totalRes = {
@@ -741,6 +801,21 @@ Page({
     if (goodsList.length == 0) {
       return
     }
+    // 配送冲突订单跳过运费试算，不调用试算接口
+    if (this.data.hasDeliveryConflict) {
+      const goodsJsonStr = goodsList.map(item => ({
+        propertyChildIds: item.propertyChildIds || '',
+        goodsId: item.goodsId,
+        number: item.number,
+        logisticsType: 0,
+        inviter_id: 0
+      }))
+      this.setData({
+        isNeedLogistics: 0,
+        goodsJsonStr: JSON.stringify(goodsJsonStr)
+      })
+      return
+    }
     const goodsJsonStr = []
     var isNeedLogistics = 0;
 
@@ -824,6 +899,10 @@ Page({
     this.processYunfei()
   },
   radioChange(e) {
+    // 强制快递或强制自提时，不允许用户手动切换
+    if (this.data.deliveryMode == 'express' || this.data.deliveryMode == 'pickup') {
+      return
+    }
     this.setData({
       peisongType: e.detail.value
     })

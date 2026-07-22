@@ -94,7 +94,11 @@
   </block>
   <view class="container-box cell-group">
     <view class="peisong-way">
-      <van-cell wx:if="{{shopCarType == 0 && isNeedLogistics > 0}}" title="配送方式">
+      <!-- 冲突提示：仅快递 + 仅自提商品同时存在 -->
+      <van-cell wx:if="{{hasDeliveryConflict}}" title="配送方式" value="商品配送方式冲突，请拆分订单" value-class="delivery-conflict-tip" />
+
+      <!-- 可选配送（deliveryMode == 'optional'），保留原有逻辑 -->
+      <van-cell wx:elif="{{deliveryMode == 'optional' && shopCarType == 0 && isNeedLogistics > 0}}" title="配送方式">
         <view slot="">
           <radio-group bindchange="radioChange">
             <label class="radio">
@@ -106,14 +110,18 @@
           </radio-group>
         </view>
       </van-cell>
-      <van-cell wx:if="{{shopCarType == 1}}" title="配送地址" />
-      <picker wx:if="{{peisongType == 'zq' && shops}}" bindchange="shopSelect" value="{{shopIndex}}" range="{{shops}}" range-key="name">
+      <!-- VOP 云货架（shopCarType == 1），保持原有"配送地址"标题 -->
+      <van-cell wx:if="{{shopCarType == 1 && !isVirtualOrder}}" title="配送地址" />
+
+      <!-- 强制自提：显示门店选择和联系方式 -->
+      <picker wx:if="{{peisongType == 'zq' && !isVirtualOrder && !hasDeliveryConflict && shops}}" bindchange="shopSelect" value="{{shopIndex}}" range="{{shops}}" range-key="name">
         <van-cell title="选择自提门店" value="{{shopIndex == -1 ? '请选择':shops[shopIndex].name}}" required is-link />
       </picker>
-      <van-cell wx:if="{{peisongType == 'zq' && shopIndex != -1}}" title="电话" value="{{shops[shopIndex].linkPhone}}" is-link bind:click="callMobile" />
-      <van-cell wx:if="{{peisongType == 'zq' && shopIndex != -1}}" title="地址" title-width="64rpx" value="{{shops[shopIndex].address}}" is-link bind:click="goMap" />
-      
-      <view class="address-box" wx:if="{{peisongType == 'kd' && isNeedLogistics > 0}}">
+      <van-cell wx:if="{{peisongType == 'zq' && !isVirtualOrder && !hasDeliveryConflict && shopIndex != -1}}" title="电话" value="{{shops[shopIndex].linkPhone}}" is-link bind:click="callMobile" />
+      <van-cell wx:if="{{peisongType == 'zq' && !isVirtualOrder && !hasDeliveryConflict && shopIndex != -1}}" title="地址" title-width="64rpx" value="{{shops[shopIndex].address}}" is-link bind:click="goMap" />
+
+      <!-- 快递地址：非虚拟、非冲突、快递模式时显示 -->
+      <view class="address-box" wx:if="{{peisongType == 'kd' && !isVirtualOrder && !hasDeliveryConflict && isNeedLogistics > 0}}">
         <van-cell wx:if="{{!curAddressData}}" icon="add-o" title="新增收货地址" is-link bind:click="addAddress" />
         <view class="show-address" hidden="{{!curAddressData}}" bindtap="selectAddress">
           <view class="l">
@@ -126,7 +134,7 @@
         </view>
       </view>
       <van-field
-        wx:if="{{peisongType == 'zq'}}"
+        wx:if="{{peisongType == 'zq' && !isVirtualOrder && !hasDeliveryConflict}}"
         size="large"
         model:value="{{ name }}"
         label="联系人"
@@ -135,7 +143,7 @@
         placeholder="请输入联系人"
       />
       <van-field
-        wx:if="{{peisongType == 'zq'}}"
+        wx:if="{{peisongType == 'zq' && !isVirtualOrder && !hasDeliveryConflict}}"
         size="large"
         model:value="{{ mobile }}"
         label="联系电话"
@@ -295,6 +303,13 @@
     price="{{ (allGoodsAndYunPrice - yunPrice)*100 }}"
     suffix-label="{{ totalScoreToPay ? '+' + totalScoreToPay + ' 积分' : '' }}"
     button-text="该地区禁售"
+    disabled
+  />
+  <van-submit-bar
+    wx:elif="{{ hasDeliveryConflict }}"
+    price="{{ allGoodsAndYunPrice*100 }}"
+    suffix-label="{{ totalScoreToPay ? '+' + totalScoreToPay + ' 积分' : '' }}"
+    button-text="请拆分订单"
     disabled
   />
   <van-submit-bar

@@ -522,7 +522,9 @@ swiper-item image {
   background: #fff;
   box-shadow: 0 2rpx 16rpx rgba(0,0,0,0.04);
 }
-
+.size-label-box {
+  padding-left: 32rpx;
+}
 .size-label-box2 {
   /* override section-card */
 }

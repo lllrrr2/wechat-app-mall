@@ -806,3 +806,8 @@ form {
   transform: scale(0.98);
   box-shadow: 0 4rpx 12rpx rgba(228, 57, 60, 0.4);
 }
+
+.delivery-conflict-tip {
+  color: #ee0a24 !important;
+  font-size: 24rpx;
+}
